@@ -2,6 +2,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import puppeteer from 'puppeteer'; // Import puppeteer for PDF generation
+import { marked } from 'marked';    // Import marked for Markdown to HTML conversion
 
 // Load environment variables from .env file
 dotenv.config();
@@ -13,7 +15,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors()); // Enable CORS for all routes
 app.use(express.json()); // Enable parsing of JSON request bodies
 
-// --- Legal Templates (UPDATED with conditional markers) ---
+// --- Legal Templates (with conditional markers) ---
 const privacyPolicyTemplate = `
 # Privacy Policy
 
@@ -121,10 +123,9 @@ app.post('/api/generate-document', async (req, res) => {
         websiteUrl,
         contactEmail,
         effectiveDate,
-        dataCollected,          // Expected as an array, e.g., ["Name", "Email", "IP Address"]
-        thirdPartyServices,     // Expected as an array, e.g., ["Google Analytics", "Stripe"]
-        governingLawCountryOrState, // Specific to T&C
-        // New boolean flags from frontend for conditional sections
+        dataCollected,
+        thirdPartyServices,
+        governingLawCountryOrState,
         usesCookies,
         collectsChildrenData,
         hasSubscriptions
@@ -156,14 +157,12 @@ app.post('/api/generate-document', async (req, res) => {
         .replace(/\[EFFECTIVE_DATE\]/g, effectiveDate || '[Effective Date Missing]');
 
     // --- Dynamic List Formatting ---
-    // For dataCollected (Privacy Policy)
     let formattedDataCollected = 'Not specified.';
     if (Array.isArray(dataCollected) && dataCollected.length > 0) {
         formattedDataCollected = dataCollected.map(item => `- ${item}`).join('\n');
     }
     generatedDocument = generatedDocument.replace(/\[TYPES_OF_DATA_COLLECTED\]/g, formattedDataCollected);
 
-    // For thirdPartyServices (Privacy Policy)
     let formattedThirdPartyServices = 'None specified.';
     if (Array.isArray(thirdPartyServices) && thirdPartyServices.length > 0) {
         formattedThirdPartyServices = thirdPartyServices.map(item => `- ${item}`).join('\n');
@@ -172,19 +171,16 @@ app.post('/api/generate-document', async (req, res) => {
 
 
     // --- Conditional Sections Logic ---
-    // Helper function to remove a block if condition is false
     const removeBlock = (doc, startTag, endTag) => {
         const regex = new RegExp(`${startTag}[\\s\\S]*?${endTag}`, 'g');
         return doc.replace(regex, '');
     };
 
-    // Helper function to keep a block, removing only the tags
     const keepBlock = (doc, startTag, endTag) => {
         const regex = new RegExp(`${startTag}([\\s\\S]*?)${endTag}`, 'g');
         return doc.replace(regex, '$1');
     };
 
-    // Conditional logic for Privacy Policy
     if (documentType === 'privacy-policy') {
         if (usesCookies) {
             generatedDocument = keepBlock(generatedDocument, '<!-- IF_USES_COOKIES -->', '<!-- END_IF_USES_COOKIES -->');
@@ -199,9 +195,7 @@ app.post('/api/generate-document', async (req, res) => {
         }
     }
 
-    // Conditional logic for Terms and Conditions
     if (documentType === 'terms-and-conditions') {
-        // Specific replacement for T&C's governing law
         generatedDocument = generatedDocument.replace(/\[GOVERNING_LAW_COUNTRY_OR_STATE\]/g, governingLawCountryOrState || '[Governing Law Country/State Missing]');
 
         if (hasSubscriptions) {
@@ -212,12 +206,102 @@ app.post('/api/generate-document', async (req, res) => {
     }
 
     // Final Cleanup: Remove any remaining conditional tags that weren't handled
-    // This is a safety net to ensure no stray markers appear in the final document.
     generatedDocument = generatedDocument.replace(/<!-- IF_[A-Z_]+ -->[\s\S]*?<!-- END_IF_[A-Z_]+ -->/g, '');
 
 
     res.json({ document: generatedDocument });
 });
+
+// --- NEW API ROUTE FOR PDF GENERATION ---
+app.post('/api/download-pdf', async (req, res) => {
+    const { documentContent, documentName } = req.body;
+
+    if (!documentContent) {
+        return res.status(400).json({ message: 'No document content provided for PDF generation.' });
+    }
+
+    let browser; // Declare browser outside try-catch to ensure it's accessible in finally
+    try {
+        // Convert Markdown to HTML
+        const htmlContent = marked(documentContent);
+
+        // Basic HTML structure for PDF, including some default styling for better readability
+        const fullHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>${documentName || 'Document'}</title>
+                <meta charset="utf-8">
+                <style>
+                    body {
+                        font-family: 'Inter', sans-serif; /* Use Inter font */
+                        margin: 40px;
+                        line-height: 1.6;
+                        color: #333;
+                    }
+                    h1, h2, h3, h4, h5, h6 {
+                        color: #000;
+                        margin-top: 1.5em;
+                        margin-bottom: 0.5em;
+                    }
+                    h1 { font-size: 2em; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+                    h2 { font-size: 1.6em; }
+                    ul {
+                        list-style-type: disc;
+                        margin-left: 20px;
+                    }
+                    p {
+                        margin-bottom: 1em;
+                    }
+                    strong {
+                        font-weight: bold;
+                    }
+                </style>
+                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+            </head>
+            <body>
+                ${htmlContent}
+            </body>
+            </html>
+        `;
+
+        // Launch a headless browser
+        browser = await puppeteer.launch({
+            headless: true, // Run in headless mode
+            args: ['--no-sandbox', '--disable-setuid-sandbox'] // Recommended for Docker/production environments
+        });
+        const page = await browser.newPage();
+
+        // Set the content
+        await page.setContent(fullHtml, { waitUntil: 'networkidle0' });
+
+        // Generate PDF
+        const pdfBuffer = await page.pdf({
+            format: 'A4',
+            printBackground: true,
+            margin: {
+                top: '20mm',
+                right: '20mm',
+                bottom: '20mm',
+                left: '20mm'
+            }
+        });
+
+        // Set response headers for PDF download
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${documentName || 'document'}.pdf"`);
+        res.send(pdfBuffer);
+
+    } catch (error) {
+        console.error('Error generating PDF:', error);
+        res.status(500).json({ message: 'Failed to generate PDF.', error: error.message });
+    } finally {
+        if (browser) {
+            await browser.close(); // Ensure browser is closed even if an error occurs
+        }
+    }
+});
+// --- END NEW API ROUTE FOR PDF GENERATION ---
 
 
 // Start the server
