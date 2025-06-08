@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import './App.css'; // Importing the CSS file for styling
+
 // Main App component
 export default function App() {
   // State variables for all form inputs
@@ -22,6 +23,7 @@ export default function App() {
   // State for generated document and loading
   const [generatedDocument, setGeneratedDocument] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false); // New loading state for PDF download
   const [error, setError] = useState('');
 
   // Predefined options for data collected (can be extended)
@@ -94,16 +96,56 @@ export default function App() {
     }
   };
 
+  // Function to handle PDF download
+  const handleDownloadPdf = async () => {
+    if (!generatedDocument) {
+      setError('No document generated to download.');
+      return;
+    }
+
+    setIsDownloading(true);
+    setError('');
+
+    // Determine the filename based on document type
+    const filename = `${documentType.replace('-', ' ')}_${companyName || 'document'}_${effectiveDate || ''}`.toLowerCase().replace(/[^a-z0-9_.]/g, '-');
+
+    try {
+      const response = await fetch('http://localhost:5000/api/download-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ documentContent: generatedDocument, documentName: filename }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text(); // Read as text in case of non-JSON error
+        throw new Error(`Failed to download PDF: ${errorText}`);
+      }
+
+      // Get the response as a blob (binary data)
+      const blob = await response.blob();
+
+      // Create a URL for the blob
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${filename}.pdf`; // Set the download filename
+      document.body.appendChild(a);
+      a.click(); // Programmatically click the link to trigger download
+      window.URL.revokeObjectURL(url); // Clean up the URL object
+
+    } catch (err) {
+      console.error('Error downloading PDF:', err);
+      setError(err.message || 'An unexpected error occurred during PDF download.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <>
-      {/* CSS Styles embedded directly for single-file compilation */}
-      <style>
-        {`
-
-        `}
-      </style>
-
-      {/* Main container using custom CSS class for responsiveness and centering */}
+      {/* Main container for the app */}
       <div className="app-wrapper">
         <div className="card">
           <h1 className="app-title">Legal Document Generator</h1>
@@ -311,6 +353,16 @@ export default function App() {
               <pre className="generated-content">
                 {generatedDocument}
               </pre>
+            </div>
+            {/* Download PDF Button */}
+            <div className="download-button-group">
+              <button
+                className="download-button" // Use specific class for styling
+                onClick={handleDownloadPdf}
+                disabled={isDownloading}
+              >
+                {isDownloading ? 'Downloading PDF...' : 'Download PDF'}
+              </button>
             </div>
           </div>
         )}
