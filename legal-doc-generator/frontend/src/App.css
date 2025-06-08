@@ -2,7 +2,7 @@
 
 /* Font imports */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
 
 /* Global body styling for background and central alignment */
 body {
@@ -359,4 +359,44 @@ button:disabled {
     line-height: 1.7; /* Improved readability */
     color: #fcfcfc; /* Brighter text for better contrast */
     text-shadow: 0px 1px 3px rgba(0, 0, 0, 0.15); /* Subtle text shadow */
+}
+
+/* New PDF Download Button Styles */
+.download-button-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem; /* Increased gap */
+    margin-top: 2rem; /* More space above */
+}
+
+@media (min-width: 768px) {
+    .download-button-group {
+        flex-direction: row;
+        justify-content: center;
+    }
+}
+
+.download-button {
+    background: linear-gradient(135deg, #28a745, #218838); /* Green gradient for download */
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3); /* Initial shadow */
+}
+
+.download-button:hover {
+    background: linear-gradient(135deg, #218838, #1e7e34); /* Darker green on hover */
+    box-shadow: 0 15px 30px rgba(0, 0, 0, 0.45); /* Stronger hover shadow */
+}
+
+.download-button:disabled {
+    background: linear-gradient(135deg, #5e7762, #4c6250); /* Grayed out green for disabled */
+}
+
+/* General spacing for the app wrapper (App.js .app-wrapper class handles this) */
+.app-wrapper {
+    min-height: 100vh;
+    padding: 40px 20px; /* Adjust padding as needed */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
 }
